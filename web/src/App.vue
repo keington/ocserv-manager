@@ -1,111 +1,113 @@
 <template>
-    <div class="container">
-        <h3>User management</h3>
+  <div class="main">
+    <button @click="startOpenConnect">Start OpenConnect</button>
+    <button @click="stopOpenConnect">Stop OpenConnect</button>
+    <div class="users">
+      <h3>User List:</h3>
+      <ul>
+        <li v-for="(user, index) in userList" :key="index">{{ user }}</li>
+      </ul>
+      <form>
+        <h3>Add User:</h3>
         <div class="form-group">
-            <label for="username">Username:</label>
-            <input type="text" id="username" v-model="username">
-            <label for="password">Password:</label>
-            <input type="password" id="password" v-model="password">
-            <button @click="addUser">Add user</button>
+          <label>Username:</label>
+          <input type="text" v-model="newUser.username">
         </div>
-        <br>
         <div class="form-group">
-            <label for="delete-username">Username:</label>
-            <input type="text" id="delete-username" v-model="deleteUsername">
-            <button @click="deleteUser">Delete user</button>
+          <label>Password:</label>
+          <input type="password" v-model="newUser.password">
         </div>
-        <hr>
-        <h3>Server management</h3>
-        <div class="button-group">
-            <button @click="start">Start</button>
-            <button @click="stop">Stop</button>
-            <button @click="restart">Restart</button>
-        </div>
-        <br>
+        <button @click.prevent="addUser">Add User</button>
+      </form>
+      <form>
+        <h3>Delete User:</h3>
         <div class="form-group">
-            <input type="text" placeholder="Session ID" v-model="sessionId">
-            <button @click="disconnect">Disconnect</button>
+          <label>Username:</label>
+          <input type="text" v-model="deleteUser.username">
         </div>
+        <button @click.prevent="deleteUser">Delete User</button>
+      </form>
     </div>
+  </div>
 </template>
 
 <script>
 import axios from "axios";
 
 export default {
-    name: 'App',
-    data() {
-        return {
-            username: '',
-            password: '',
-            deleteUsername: '',
-            sessionId: ''
-        };
+  name: "App",
+  data() {
+    return {
+      userList: [],
+      newUser: {
+        username: "",
+        password: ""
+      },
+      deleteUser: {
+        username: ""
+      }
+    };
+  },
+  mounted() {
+    this.getUserList();
+  },
+  methods: {
+    getUserList() {
+      axios.get("/api/user/list").then(response => {
+        this.userList = response.data.message.split("\n");
+      });
     },
-    methods: {
-        sendCommand(command) {
-            const url = '/control';
-            const params = { command };
-            axios.post(url, params)
-                .then(response => {
-                    console.log(response.data);
-                })
-                .catch(error => {
-                    console.error(error);
-                });
-        },
-        start() {
-            this.sendCommand('start');
-        },
-        stop() {
-            this.sendCommand('stop');
-        },
-        restart() {
-            this.sendCommand('restart');
-        },
-        disconnect() {
-            this.sendCommand(`disconnect ${this.sessionId}`);
-        },
-        addUser() {
-            this.sendCommand(`add-user ${this.username} ${this.password}`);
-        },
-        deleteUser() {
-            this.sendCommand(`delete-user ${this.deleteUsername}`);
-        }
+    startOpenConnect() {
+      axios.post("/api/start").then(() => {
+        alert("OpenConnect started");
+      });
+    },
+    stopOpenConnect() {
+      axios.post("/api/stop").then(() => {
+        alert("OpenConnect stopped");
+      });
+    },
+    addUser() {
+      axios
+        .post(
+          `/api/user/add/${this.newUser.username}/${this.newUser.password}`
+        )
+        .then(() => {
+          alert("User added");
+          this.getUserList();
+          this.newUser.username = "";
+          this.newUser.password = "";
+        });
+    },
+    deleteUser() {
+      axios
+        .delete(`/api/user/delete/${this.deleteUser.username}`)
+        .then(() => {
+          alert("User deleted");
+          this.getUserList();
+          this.deleteUser.username = "";
+        });
     }
+  }
 };
 </script>
 
-<style>
-.container {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    justify-content: center;
-    align-items: center;
+<style scoped>
+.main {
+  padding: 20px;
 }
-
 .form-group {
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
-    align-items: center;
-    margin-bottom: 15px;
+  margin-bottom: 10px;
 }
-
-.form-group > * {
-    margin-right: 10px;
+.users {
+  margin-top: 20px;
 }
-
-.button-group {
-    display: flex;
-    flex-direction: row;
-    justify-content: center;
-    align-items: center;
-    margin-bottom: 15px;
+ul {
+  margin-top: 0;
+  margin-bottom: 10px;
+  list-style: none;
 }
-
-.button-group > * {
-    margin-right: 10px;
+li {
+  margin-bottom: 5px;
 }
 </style>

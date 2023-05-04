@@ -2,112 +2,82 @@ package main
 
 import (
 	"fmt"
-	"io"
-	"log"
-	"net/http"
 	"os/exec"
-	"strings"
+
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
-	// 启动 HTTP 服务器
-	http.HandleFunc("/", handleIndex)
-	http.HandleFunc("/control", handleControl)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	r := gin.Default()
+	api := r.Group("/api")
+	{
+		api.POST("/start", startOpenConnect)
+		api.POST("/stop", stopOpenConnect)
+		api.POST("/user/add/:username/:password", addUser)
+		api.DELETE("/user/delete/:username", deleteUser)
+		api.GET("/user/list", getUserList)
+	}
+	err := r.Run(":8080")
+	if err != nil {
+		fmt.Println("Failed to start server")
+		return
+	}
 }
 
-func handleIndex(w http.ResponseWriter, r *http.Request) {
-	// 返回前端页面
-	http.ServeFile(w, r, "index.html")
+// 启动openConnect程序
+func startOpenConnect(c *gin.Context) {
+	out, err := exec.Command("bash", "-c", "sudo openconnect --user=user vpn.server.com").Output()
+	if err != nil {
+		fmt.Println("Failed to start OpenConnect")
+		c.AbortWithStatusJSON(500, gin.H{"message": "Failed to start OpenConnect"})
+		return
+	}
+	c.JSON(200, gin.H{"message": string(out)})
 }
 
-func handleControl(w http.ResponseWriter, r *http.Request) {
-	// 解析 POST 请求参数
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Bad request", http.StatusBadRequest)
+// 停止openConnect程序
+func stopOpenConnect(c *gin.Context) {
+	out, err := exec.Command("bash", "-c", "sudo killall openconnect").Output()
+	if err != nil {
+		fmt.Println("Failed to stop OpenConnect")
+		c.AbortWithStatusJSON(500, gin.H{"message": "Failed to stop OpenConnect"})
 		return
 	}
-	command := strings.TrimSpace(r.Form.Get("command"))
-	parts := strings.Fields(command)
-	if len(parts) < 1 {
-		http.Error(w, "Bad request", http.StatusBadRequest)
-		return
-	}
+	c.JSON(200, gin.H{"message": string(out)})
+}
 
-	switch parts[0] {
-	case "start":
-		output, err := exec.Command("sudo", "systemctl", "start", "ocserv").CombinedOutput()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to start ocserv: %v\n%s", err, output), http.StatusInternalServerError)
-			return
-		}
-	case "stop":
-		output, err := exec.Command("sudo", "systemctl", "stop", "ocserv").CombinedOutput()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to stop ocserv: %v\n%s", err, output), http.StatusInternalServerError)
-			return
-		}
-	case "restart":
-		output, err := exec.Command("sudo", "systemctl", "restart", "ocserv").CombinedOutput()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to restart ocserv: %v\n%s", err, output), http.StatusInternalServerError)
-			return
-		}
-	case "add-user":
-		if len(parts) < 3 {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-		username := parts[1]
-		password := parts[2]
-		output, err := exec.Command("sudo", "/usr/sbin/ocpasswd", "-c", "/etc/ocserv/ocpasswd", username).CombinedOutput()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to add user: %v\n%s", err, output), http.StatusInternalServerError)
-			return
-		}
-		stdin, err := exec.Command("sudo", "/usr/sbin/ocpasswd", "-c", "/etc/ocserv/ocpasswd", username).StdinPipe()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to set password: %v", err), http.StatusInternalServerError)
-			return
-		}
-		defer func(stdin io.WriteCloser) {
-			err := stdin.Close()
-			if err != nil {
-				log.Println(err)
-			}
-		}(stdin)
-		_, err = fmt.Fprint(stdin, password)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to set password: %v", err), http.StatusInternalServerError)
-			return
-		}
-	case "delete-user":
-		if len(parts) < 2 {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-		username := parts[1]
-		output, err := exec.Command("sudo", "/usr/sbin/ocpasswd", "-c", "/etc/ocserv/ocpasswd", "-d", username).CombinedOutput()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to delete user: %v\n%s", err, output), http.StatusInternalServerError)
-			return
-		}
-	case "disconnect":
-		if len(parts) < 2 {
-			http.Error(w, "Bad request", http.StatusBadRequest)
-			return
-		}
-		sessionID := parts[1]
-		output, err := exec.Command("sudo", "ocserv-control", "disconnect-session", sessionID).CombinedOutput()
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Failed to disconnect session: %v\n%s", err, output), http.StatusInternalServerError)
-			return
-		}
-	default:
-		http.Error(w, "Bad request", http.StatusBadRequest)
+// 添加用户
+func addUser(c *gin.Context) {
+	username := c.Param("username")
+	password := c.Param("password")
+	out, err := exec.Command("bash", "-c", fmt.Sprintf("sudo useradd -m %s && echo %s | sudo passwd --stdin %s", username, password, username)).Output()
+	if err != nil {
+		fmt.Println("Failed to add user")
+		c.AbortWithStatusJSON(500, gin.H{"message": "Failed to add user"})
 		return
 	}
+	c.JSON(200, gin.H{"message": string(out)})
+}
 
-	// 返回成功响应
-	w.WriteHeader(http.StatusOK)
+// 删除用户
+func deleteUser(c *gin.Context) {
+	username := c.Param("username")
+	out, err := exec.Command("bash", "-c", fmt.Sprintf("sudo userdel -r %s", username)).Output()
+	if err != nil {
+		fmt.Println("Failed to delete user")
+		c.AbortWithStatusJSON(500, gin.H{"message": "Failed to delete user"})
+		return
+	}
+	c.JSON(200, gin.H{"message": string(out)})
+}
+
+// 获取用户列表
+func getUserList(c *gin.Context) {
+	out, err := exec.Command("bash", "-c", "sudo cat /etc/passwd").Output()
+	if err != nil {
+		fmt.Println("Failed to get user list")
+		c.AbortWithStatusJSON(500, gin.H{"message": "Failed to get user list"})
+		return
+	}
+	c.JSON(200, gin.H{"message": string(out)})
 }
